@@ -4,7 +4,8 @@ from pathlib import Path
 
 
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
-ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")  # Rachel voice
+ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "CwhRBWXzGAHq8TQ4Fs17")
+ELEVENLABS_MODEL_ID = os.getenv("ELEVENLABS_MODEL_ID", "eleven_v3")
 
 
 async def text_to_speech(text: str, output_path: str) -> None:
@@ -17,7 +18,7 @@ async def text_to_speech(text: str, output_path: str) -> None:
         }
         data = {
             "text": text,
-            "model_id": "eleven_multilingual_v2",
+            "model_id": ELEVENLABS_MODEL_ID,
             "voice_settings": {
                 "stability": 0.5,
                 "similarity_boost": 0.75,
