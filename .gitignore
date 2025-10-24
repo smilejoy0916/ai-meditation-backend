@@ -16,7 +16,6 @@ venv.bak/
 
 # Temp files
 temp/
-*.mp3
 *.wav
 
 # IDE
