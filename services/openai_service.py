@@ -41,7 +41,7 @@ async def generate_meditation(
     try:
         client = get_openai_client()
         response = await client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o-mini",
             messages=[
                 {
                     "role": "system",
