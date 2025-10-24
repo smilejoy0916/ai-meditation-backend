@@ -20,8 +20,9 @@ async def text_to_speech(text: str, output_path: str) -> None:
             "text": text,
             "model_id": ELEVENLABS_MODEL_ID,
             "voice_settings": {
-                "stability": 1.0,
-                "similarity_boost": 0.75,
+                "stability": 0.5,
+                "similarity_boost": 0.6,
+                "speed": 0.7,
             },
         }
 
