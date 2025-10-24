@@ -92,7 +92,7 @@ async def process_meditation_background(
     session_dir = Path(temp_dir) / session_id
 
     try:
-        # Create session directory
+         # Create session directory
         ensure_dir_exists(str(session_dir))
 
         # Step 1: Generate meditation text with AI
@@ -120,27 +120,24 @@ async def process_meditation_background(
             chapter_paths, 60, combined_path
         )  # 60 seconds of silence
 
-        # Get duration for music generation
-        meditation_duration = await get_audio_duration(combined_path)
-
-        # Step 4: Generate and overlay meditation music
+        # Step 4: Overlay with static background music
         update_session(session_id, current_step=3)
-        music_path = str(session_dir / "music.mp3")
-
-        # Generate music for the meditation duration (in milliseconds)
-        # Add extra 30 seconds to ensure it's long enough
-        await generate_music(int((meditation_duration + 30) * 1000), music_path)
-
-        # Step 5: Overlay music with meditation
-        update_session(session_id, current_step=4)
+        
+        # Path to your static music file (update this path to your actual music file location)
+        static_music_path = os.path.join(os.path.dirname(__file__), "assets", "meditation_music.mp3")
+        
+        # Verify the static music file exists
+        if not os.path.exists(static_music_path):
+            raise FileNotFoundError(f"Static music file not found at: {static_music_path}")
+        
         final_path = str(session_dir / "final.mp3")
-        await overlay_audio(combined_path, music_path, final_path)
+        await overlay_audio(combined_path, static_music_path, final_path)
 
         # Mark as completed
         update_session(
             session_id,
             status=SessionStatus.COMPLETED,
-            current_step=5,
+            current_step=4,
             audio_path=final_path,
         )
 
@@ -152,7 +149,6 @@ async def process_meditation_background(
                 pass
         try:
             os.unlink(combined_path)
-            os.unlink(music_path)
         except:
             pass
 
