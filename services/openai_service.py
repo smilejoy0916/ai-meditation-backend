@@ -28,13 +28,13 @@ async def generate_meditation(
 #Output: output only the meditation itself with the relevant tags, without saying anything else or without including section titles
 
 #Structure of the meditation with instructions for each section:
-##Section 1: Introduction to the topic. The general topic is quantum healing. Select a topic at random addressed by Deepak Chopra in his Quantum Healing book without mentioning that book in the meditation. Tie in this general topic with the disease, symptom and additional instruction given by the user above.
+##Section 1: Introduction to the topic. The general topic is quantum healing. Select a topic at random addressed by Deepak Chopra in his Quantum Healing book without mentioning that book in the meditation. Tie in this general topic with the disease, symptom and additional instruction given by the user above. This part should be suitable for a meditation, yet scientific enough - without being too specific (e.g. there is a proven mind-body connection, but don't talk about peptides or other detailed processes, just give examples relevant to the disease and symptom)
 
-##Section 2: start of the meditation, settle the user. Choose any of common techniques to do so. Leave some extra time/silence at the end of this section to allow the user to relax further in silence. End this section with the following tag: <break>
+##Section 2: start of the meditation, settle the user. Choose any of common techniques to do so (e.g. focus on breath, senses, body, etc.). Leave some extra time/silence at the end of this section to allow the user to relax further in silence. End this section with the following tag: <break>
 
 ##Section 3: further relaxation. Choose any of common techniques to do so. Leave some extra time/silence at the end of this section to allow the user to relax further in silence. End this section with the following tag: <break>
 
-##Section 4: visualisation. Introduce the visualisation technique, tie it to the disease, symptom and additional instruction of the user and then start. Choose any of common visualisation techniques to do so.
+##Section 4: visualisation. Introduce the visualisation technique, tie it to the disease, symptom and additional instruction of the user and to section 1 of the meditation and then start. Choose any of common visualisation techniques to do so.
 
 ##Section 5: end of meditation."""
 
