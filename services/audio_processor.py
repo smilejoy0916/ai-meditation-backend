@@ -43,7 +43,11 @@ async def create_silence(duration_seconds: int, output_path: str) -> None:
             "libmp3lame",
             "-b:a",
             "128k",
-            "-y",  # Overwrite output file
+            "-q:a",  # Use VBR quality instead of CBR for faster encoding
+            "4",
+            "-preset",  # Add preset for speed
+            "ultrafast",
+            "-y",
             output_path,
         ]
         subprocess.run(cmd, check=True, capture_output=True)
@@ -63,6 +67,10 @@ async def create_silence(duration_seconds: int, output_path: str) -> None:
                 "libmp3lame",
                 "-b:a",
                 "128k",
+                "-q:a",
+                "4",
+                "-preset",
+                "ultrafast",
                 "-ac",
                 "2",
                 "-y",
@@ -89,7 +97,8 @@ async def concatenate_audio(input_files: List[str], output_path: str) -> None:
                 abs_path = os.path.abspath(file).replace("\\", "/")
                 f.write(f"file '{abs_path}'\n")
 
-        # Run ffmpeg
+        # Try to use stream copy first (much faster) - this works if all files have same codec/format
+        # If that fails, fall back to re-encoding
         cmd = [
             "ffmpeg",
             "-f",
@@ -98,14 +107,37 @@ async def concatenate_audio(input_files: List[str], output_path: str) -> None:
             "0",
             "-i",
             file_list_path,
-            "-c:a",
-            "libmp3lame",
-            "-b:a",
-            "128k",
+            "-c",  # Use -c instead of -c:a to copy all codecs (video if any)
+            "copy",  # Stream copy - much faster, no re-encoding
             "-y",
             output_path,
         ]
-        subprocess.run(cmd, check=True, capture_output=True)
+        
+        try:
+            subprocess.run(cmd, check=True, capture_output=True, timeout=300)
+        except subprocess.CalledProcessError:
+            # Fall back to re-encoding if stream copy fails (files have different formats)
+            print(f"Stream copy failed, re-encoding with preset")
+            cmd = [
+                "ffmpeg",
+                "-f",
+                "concat",
+                "-safe",
+                "0",
+                "-i",
+                file_list_path,
+                "-c:a",
+                "libmp3lame",
+                "-b:a",
+                "128k",
+                "-q:a",
+                "4",
+                "-preset",
+                "ultrafast",
+                "-y",
+                output_path,
+            ]
+            subprocess.run(cmd, check=True, capture_output=True, timeout=300)
 
     finally:
         # Clean up file list
@@ -142,10 +174,14 @@ async def overlay_audio(
                 "libmp3lame",
                 "-b:a",
                 "128k",
+                "-q:a",
+                "4",  # Add quality parameter
+                "-preset",
+                "ultrafast",
                 "-y",
                 output_path,
             ]
-            subprocess.run(cmd, check=True, capture_output=True)
+            subprocess.run(cmd, check=True, capture_output=True, timeout=300)
         else:
             # Trim the music if it's longer than the meditation
             cmd = [
@@ -160,10 +196,14 @@ async def overlay_audio(
                 "libmp3lame",
                 "-b:a",
                 "128k",
+                "-q:a",
+                "4",  # Add quality parameter
+                "-preset",
+                "ultrafast",
                 "-y",
                 output_path,
             ]
-            subprocess.run(cmd, check=True, capture_output=True)
+            subprocess.run(cmd, check=True, capture_output=True, timeout=300)
 
     except Exception as e:
         print(f"Error overlaying audio: {e}")
@@ -266,4 +306,3 @@ async def get_ffmpeg_status() -> Dict[str, any]:
         status["message"] = f"Error checking FFmpeg status: {str(e)}"
     
     return status
-

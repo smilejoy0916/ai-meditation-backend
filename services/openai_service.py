@@ -54,11 +54,14 @@ async def generate_meditation(
 ##Section 5: end of meditation."""
     
     # Format the prompt with user inputs
-    prompt = system_prompt_template.format(
-        disease=disease,
-        symptom=symptom,
-        additional_instructions=additional_instructions or "None"
-    )
+    if not system_prompt_template:
+        prompt = system_prompt_template.format(
+            disease=disease,
+            symptom=symptom,
+            additional_instructions=additional_instructions or "None"
+        )
+    else:
+        prompt = system_prompt_template.replace("{disease}", disease).replace("{symptom}", symptom).replace("{additional_instructions}", additional_instructions or "None")
 
     try:
         client = get_openai_client(api_key)

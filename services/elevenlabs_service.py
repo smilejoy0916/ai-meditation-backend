@@ -21,7 +21,7 @@ async def text_to_speech(text: str, output_path: str, api_key: Optional[str] = N
             "Content-Type": "application/json",
         }
         data = {
-            "text": text,
+            "text": f"`{text}`",
             "model_id": elevenlabs_model_id,
             "voice_settings": {
                 "stability": 0.5,
