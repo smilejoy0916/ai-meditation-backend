@@ -1,7 +1,9 @@
 import os
 from supabase import create_client, Client
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from dotenv import load_dotenv
+import base64
+from datetime import datetime
 
 load_dotenv()
 
@@ -38,6 +40,7 @@ async def get_settings() -> Dict[str, Any]:
             "elevenlabs_api_key": os.getenv("ELEVENLABS_API_KEY", ""),
             "openai_model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
             "elevenlabs_model": os.getenv("ELEVENLABS_MODEL_ID", "eleven_turbo_v2_5"),
+            "elevenlabs_voice_id": os.getenv("ELEVENLABS_VOICE_ID", "BpjGufoPiobT79j2vtj4"),
             "system_prompt": get_default_system_prompt(),
         }
     except Exception as e:
@@ -48,6 +51,7 @@ async def get_settings() -> Dict[str, Any]:
             "elevenlabs_api_key": os.getenv("ELEVENLABS_API_KEY", ""),
             "openai_model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
             "elevenlabs_model": os.getenv("ELEVENLABS_MODEL_ID", "eleven_turbo_v2_5"),
+            "elevenlabs_voice_id": os.getenv("ELEVENLABS_VOICE_ID", "BpjGufoPiobT79j2vtj4"),
             "system_prompt": get_default_system_prompt(),
         }
 
@@ -97,4 +101,166 @@ def get_default_system_prompt() -> str:
 ##Section 4: visualisation. Introduce the visualisation technique, tie it to the disease, symptom and additional instruction of the user and to section 1 of the meditation and then start. Choose any of common visualisation techniques to do so.
 
 ##Section 5: end of meditation."""
+
+
+async def save_meditation(
+    session_id: str,
+    disease: str,
+    symptom: str,
+    additional_instructions: str,
+    meditation_text: str,
+    audio_path: str,
+    duration_seconds: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Save meditation to database and upload audio to Supabase Storage"""
+    try:
+        client = get_supabase_client()
+        
+        # Upload audio to Supabase Storage
+        audio_url = await upload_audio_to_storage(session_id, audio_path)
+        
+        # Prepare meditation data
+        meditation_data = {
+            "session_id": session_id,
+            "disease": disease,
+            "symptom": symptom,
+            "additional_instructions": additional_instructions or None,
+            "meditation_text": meditation_text,
+            "audio_url": audio_url,
+            "duration_seconds": duration_seconds,
+            "status": "completed",
+        }
+        
+        # Insert meditation into database
+        response = client.table("meditations").insert(meditation_data).execute()
+        
+        if response.data and len(response.data) > 0:
+            return response.data[0]
+        
+        raise Exception("Failed to save meditation")
+    except Exception as e:
+        print(f"Error saving meditation: {e}")
+        raise Exception(f"Failed to save meditation: {str(e)}")
+
+
+async def upload_audio_to_storage(session_id: str, audio_path: str) -> str:
+    """Upload audio file to Supabase Storage"""
+    try:
+        client = get_supabase_client()
+        
+        # Read audio file
+        with open(audio_path, 'rb') as f:
+            audio_data = f.read()
+        
+        # Define storage path
+        bucket_name = "meditation-audio"
+        file_name = f"{session_id}.mp3"
+        storage_path = f"meditations/{file_name}"
+        
+        # Ensure bucket exists
+        try:
+            buckets = client.storage.list_buckets()
+            bucket_exists = any(bucket.name == bucket_name for bucket in buckets)
+            
+            if not bucket_exists:
+                # Create bucket if it doesn't exist
+                client.storage.create_bucket(
+                    bucket_name,
+                    options={"public": True, "file_size_limit": 104857600}  # 100MB limit
+                )
+        except Exception as e:
+            print(f"Bucket creation check error (may already exist): {e}")
+        
+        # Upload file
+        upload_response = client.storage.from_(bucket_name).upload(
+            storage_path,
+            audio_data,
+            file_options={"content-type": "audio/mpeg"}
+        )
+        
+        # Get public URL
+        url_response = client.storage.from_(bucket_name).get_public_url(storage_path)
+        
+        return url_response
+    except Exception as e:
+        print(f"Error uploading audio to storage: {e}")
+        raise Exception(f"Failed to upload audio: {str(e)}")
+
+
+async def get_all_meditations(limit: Optional[int] = None, offset: int = 0) -> List[Dict[str, Any]]:
+    """Get all meditations from database"""
+    try:
+        client = get_supabase_client()
+        
+        query = client.table("meditations").select("*").order("created_at", desc=True)
+        
+        if limit is not None:
+            query = query.limit(limit).offset(offset)
+        
+        response = query.execute()
+        
+        return response.data if response.data else []
+    except Exception as e:
+        print(f"Error fetching meditations: {e}")
+        return []
+
+
+async def get_meditation_by_id(meditation_id: str) -> Optional[Dict[str, Any]]:
+    """Get meditation by ID"""
+    try:
+        client = get_supabase_client()
+        response = client.table("meditations").select("*").eq("id", meditation_id).execute()
+        
+        if response.data and len(response.data) > 0:
+            return response.data[0]
+        
+        return None
+    except Exception as e:
+        print(f"Error fetching meditation: {e}")
+        return None
+
+
+async def get_meditation_by_session_id(session_id: str) -> Optional[Dict[str, Any]]:
+    """Get meditation by session ID"""
+    try:
+        client = get_supabase_client()
+        response = client.table("meditations").select("*").eq("session_id", session_id).execute()
+        
+        if response.data and len(response.data) > 0:
+            return response.data[0]
+        
+        return None
+    except Exception as e:
+        print(f"Error fetching meditation: {e}")
+        return None
+
+
+async def delete_meditation(meditation_id: str) -> bool:
+    """Delete meditation from database and storage"""
+    try:
+        client = get_supabase_client()
+        
+        # Get meditation first
+        meditation = await get_meditation_by_id(meditation_id)
+        if not meditation:
+            return False
+        
+        # Delete audio from storage
+        if meditation.get("audio_url"):
+            try:
+                # Extract file path from URL
+                bucket_name = "meditation-audio"
+                file_name = meditation["session_id"] + ".mp3"
+                storage_path = f"meditations/{file_name}"
+                client.storage.from_(bucket_name).remove([storage_path])
+            except Exception as e:
+                print(f"Error deleting audio from storage: {e}")
+        
+        # Delete from database
+        response = client.table("meditations").delete().eq("id", meditation_id).execute()
+        
+        return True
+    except Exception as e:
+        print(f"Error deleting meditation: {e}")
+        return False
 

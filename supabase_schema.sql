@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS admin_settings (
     elevenlabs_api_key TEXT NOT NULL DEFAULT '',
     openai_model TEXT NOT NULL DEFAULT 'gpt-4o-mini',
     elevenlabs_model TEXT NOT NULL DEFAULT 'eleven_turbo_v2_5',
+    elevenlabs_voice_id TEXT NOT NULL DEFAULT 'BpjGufoPiobT79j2vtj4',
     system_prompt TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
@@ -26,12 +27,13 @@ CREATE TRIGGER update_admin_settings_updated_at
     EXECUTE FUNCTION update_updated_at_column();
 
 -- Insert default settings (optional)
-INSERT INTO admin_settings (openai_api_key, elevenlabs_api_key, openai_model, elevenlabs_model, system_prompt)
+INSERT INTO admin_settings (openai_api_key, elevenlabs_api_key, openai_model, elevenlabs_model, elevenlabs_voice_id, system_prompt)
 VALUES (
     '', -- Add your OpenAI API key here
     '', -- Add your ElevenLabs API key here
     'gpt-4o-mini',
     'eleven_turbo_v2_5',
+    'BpjGufoPiobT79j2vtj4',
     '#Instruction: write a 10-minute meditation following the below structure. In that meditation, include elevenlabs tags such as [inhale], [exhale], [pause] or [whisper]. To not make it too fast paced, make sure to include a [pause 2 seconds] tag after each sentence. Using "..." also slows the pace down. Take the user inputs into account in the relevant parts of the meditation, as described. Avoid using "now" too much to progress the meditation forward.
 
 #User input:

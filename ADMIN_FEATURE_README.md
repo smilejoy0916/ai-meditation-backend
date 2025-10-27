@@ -1,258 +1,200 @@
-# Admin Page Feature - Implementation Summary
+# Admin Dashboard - Meditation Storage & Management
 
-## What's Been Implemented
+This document describes the admin dashboard feature where every meditation created by users is stored, listed, viewable, and downloadable.
 
-I've successfully implemented a complete admin page system with Supabase integration to manage your meditation app's configuration. Here's what's included:
+## Overview
 
-### ✅ Backend Updates
+The meditation app now has two distinct sides:
 
-1. **Supabase Integration** (`backend/services/supabase_service.py`)
+1. **User Side**: Create and listen to meditations
+2. **Admin Side**: Manage all meditations, view, and download them
 
-   - Database service for storing and retrieving settings
-   - Automatic fallback to environment variables if Supabase is unavailable
-   - Get/update settings functionality
+## Features Implemented
 
-2. **Updated Services**
+### 1. Meditation Storage
 
-   - `openai_service.py`: Now accepts dynamic API keys, models, and system prompts
-   - `elevenlabs_service.py`: Now accepts dynamic API keys and models
-   - Settings are fetched from Supabase for each meditation generation
+- After creating a meditation, it is automatically stored in Supabase database
+- Audio files are uploaded to Supabase Storage
+- Meditation metadata is stored including:
+  - Disease and symptom
+  - Additional instructions
+  - Full meditation text
+  - Audio URL
+  - Duration
+  - Creation timestamp
 
-3. **New API Endpoints** (`backend/main.py`)
+### 2. Admin Meditations Dashboard
 
-   - `GET /api/admin/settings`: Retrieve current settings
-   - `PUT /api/admin/settings`: Update settings
-   - Integrated with the meditation generation process
+- List all created meditations
+- View meditation details (text, metadata)
+- Download audio files
+- Delete meditations
+- Listen to audio directly in the browser
 
-4. **Updated Dependencies** (`backend/requirements.txt`)
-   - Added `supabase` and `postgrest` packages
+## Database Schema
 
-### ✅ Frontend Updates
+### Meditations Table
 
-1. **Admin Page** (`frontend/app/admin/page.tsx`)
-
-   - Beautiful, modern UI for managing settings
-   - Form fields for:
-     - OpenAI API Key (password field)
-     - OpenAI Model (dropdown with popular models)
-     - ElevenLabs API Key (password field)
-     - ElevenLabs Model (dropdown with available models)
-     - System Prompt Template (large textarea)
-   - Success/error message display
-   - Loading states
-   - Back navigation to Create page
-
-2. **Admin Page Styling** (`frontend/app/admin/admin.module.css`)
-
-   - Professional gradient background
-   - Responsive design
-   - Clean, accessible forms
-   - Hover effects and transitions
-
-3. **Settings Button** (`frontend/app/create/page.tsx`)
-
-   - Added a Settings button in the top-right corner of the Create page
-   - Navigates to the admin page
-   - Styled to match the app's design
-
-4. **Updated Config** (`frontend/lib/config.ts`)
-   - Added `adminSettings` endpoint
-
-### 📦 Database Schema
-
-Created `backend/supabase_schema.sql` with:
-
-- `admin_settings` table structure
-- Automatic timestamp updates
-- Row Level Security (RLS) setup
-- Default settings insertion
-- Indexed for performance
-
-### 📝 Documentation
-
-Created comprehensive documentation:
-
-- **SETUP_GUIDE.md**: Complete step-by-step setup instructions
-- **ADMIN_FEATURE_README.md**: This file - implementation summary
-- **backend/supabase_schema.sql**: Database schema with comments
-
-## Quick Setup Steps
-
-1. **Create Supabase Project**
-
-   - Sign up at [supabase.com](https://supabase.com)
-   - Create a new project
-
-2. **Run Database Schema**
-
-   - Go to SQL Editor in Supabase
-   - Run the contents of `backend/supabase_schema.sql`
-
-3. **Configure Environment**
-
-   - Copy `backend/env.example` to `backend/.env`
-   - Add your Supabase URL and Key
-
-   ```env
-   SUPABASE_URL=https://xxxxxxxxxxxxx.supabase.co
-   SUPABASE_KEY=your_anon_key_here
-   ```
-
-4. **Install Dependencies**
-
-   ```bash
-   cd backend
-   pip install -r requirements.txt
-   ```
-
-5. **Start the Application**
-
-   ```bash
-   # Backend
-   cd backend
-   python main.py
-
-   # Frontend (in a new terminal)
-   cd frontend
-   npm run dev
-   ```
-
-6. **Access Admin Page**
-   - Log in at `http://localhost:3000`
-   - Click "Settings" button in the Create page
-   - Configure your API keys and prompt
-   - Save!
-
-## How It Works
-
-### Settings Priority
-
-The system uses a cascading approach for settings:
-
-1. **Supabase Database** (Primary)
-
-   - Settings are fetched from Supabase for each meditation generation
-   - Stored securely in the database
-   - Managed through the admin UI
-
-2. **Environment Variables** (Fallback)
-   - If Supabase is unavailable, uses `.env` file values
-   - Ensures the app always works
-
-### User Flow
-
-```
-User Login → Create Page → [Settings Button] → Admin Page
-                                                     ↓
-                                              Configure Settings
-                                                     ↓
-                                              Save to Supabase
-                                                     ↓
-                                         Used in Meditation Generation
+```sql
+CREATE TABLE meditations (
+    id UUID PRIMARY KEY,
+    session_id TEXT UNIQUE NOT NULL,
+    disease TEXT NOT NULL,
+    symptom TEXT NOT NULL,
+    additional_instructions TEXT,
+    meditation_text TEXT NOT NULL,
+    audio_url TEXT,
+    duration_seconds INTEGER,
+    status TEXT NOT NULL DEFAULT 'completed',
+    created_at TIMESTAMP WITH TIME ZONE,
+    updated_at TIMESTAMP WITH TIME ZONE
+);
 ```
 
-### API Flow
+## API Endpoints
+
+### Admin Endpoints
+
+#### List All Meditations
 
 ```
-Generate Meditation Request
-        ↓
-Fetch Settings from Supabase
-        ↓
-Pass to OpenAI Service (with custom model & prompt)
-        ↓
-Pass to ElevenLabs Service (with custom API key)
-        ↓
-Return Generated Audio
+GET /api/admin/meditations?limit=100&offset=0
 ```
 
-## Features Highlights
+Returns a list of all meditations with pagination support.
 
-### 🎨 Beautiful UI
+#### Get Meditation Details
 
-- Modern gradient design
-- Responsive layout
-- Professional form styling
-- Clear visual feedback
+```
+GET /api/admin/meditations/{meditation_id}
+```
 
-### 🔐 Secure
+Returns detailed information about a specific meditation.
 
-- Password fields for API keys
-- RLS-ready database schema
-- Environment variable fallback
-- Validation and error handling
+#### Delete Meditation
 
-### 🚀 Flexible
+```
+DELETE /api/admin/meditations/{meditation_id}
+```
 
-- Dynamic model selection
-- Customizable system prompts
-- Uses template variables: `{disease}`, `{symptom}`, `{additional_instructions}`
-- Works with or without Supabase
+Deletes a meditation from the database and storage.
 
-### 💪 Robust
+## Supabase Storage
 
-- Automatic fallback to env variables
-- Error handling throughout
-- Loading states
-- Success/error messages
+### Bucket Configuration
 
-## Files Changed/Created
+- **Bucket Name**: `meditation-audio`
+- **Public Access**: Yes (to allow direct audio streaming)
+- **File Size Limit**: 100MB
+- **Storage Path**: `meditations/{session_id}.mp3`
 
-### Backend
+## Frontend Pages
 
-- ✏️ `backend/requirements.txt` - Added Supabase dependencies
-- ✏️ `backend/main.py` - Added admin endpoints and Supabase integration
-- ✏️ `backend/services/openai_service.py` - Dynamic settings support
-- ✏️ `backend/services/elevenlabs_service.py` - Dynamic API key support
-- ✏️ `backend/env.example` - Added Supabase configuration
-- ➕ `backend/services/supabase_service.py` - New Supabase service
-- ➕ `backend/supabase_schema.sql` - Database schema
+### Admin Settings Page
 
-### Frontend
+- Location: `/admin`
+- Manages API settings and configuration
+- Now includes a "View Meditations" button
 
-- ✏️ `frontend/lib/config.ts` - Added admin endpoint
-- ✏️ `frontend/app/create/page.tsx` - Added Settings button
-- ✏️ `frontend/app/create/create.module.css` - Styled Settings button
-- ➕ `frontend/app/admin/page.tsx` - New admin page
-- ➕ `frontend/app/admin/admin.module.css` - Admin page styles
+### Admin Meditations Page
 
-### Documentation
+- Location: `/admin/meditations`
+- Lists all created meditations
+- Features:
+  - List view with meditation metadata
+  - View button to see full details
+  - Download button for audio files
+  - Delete button to remove meditations
+  - In-browser audio player
 
-- ➕ `SETUP_GUIDE.md` - Complete setup instructions
-- ➕ `ADMIN_FEATURE_README.md` - This file
+## Setup Instructions
 
-## Next Steps (Optional)
+### 1. Run Database Migration
 
-For production deployment, consider:
+Execute the SQL migration to create the meditations table:
 
-1. **Authentication**: Add admin role checking
-2. **RLS Policies**: Restrict database access to admin users
-3. **API Security**: Add authentication middleware to admin endpoints
-4. **Encryption**: Consider encrypting API keys in the database
-5. **Audit Logging**: Track who changes settings and when
+```bash
+# In your Supabase dashboard SQL editor, run:
+# backend/supabase_migration_meditations.sql
+```
 
-## Testing
+### 2. Configure Supabase Storage
 
-To test the implementation:
+1. Go to your Supabase dashboard
+2. Navigate to Storage
+3. Create a new bucket named `meditation-audio`
+4. Make it public (to allow direct audio access)
+5. Set file size limit to 100MB
 
-1. ✅ Admin page loads correctly
-2. ✅ Settings form is populated from Supabase
-3. ✅ Settings can be updated and saved
-4. ✅ Success/error messages appear appropriately
-5. ✅ Settings are used during meditation generation
-6. ✅ Fallback to environment variables works if Supabase is down
+Alternatively, the bucket will be created automatically on first upload.
 
-## Support
+### 3. Environment Variables
 
-If you encounter any issues:
+Ensure your `.env` file has the correct Supabase credentials:
 
-1. Check backend logs for error messages
-2. Verify Supabase credentials are correct
-3. Ensure the database schema was created successfully
-4. Check that all dependencies are installed
-5. See SETUP_GUIDE.md for detailed troubleshooting
+```env
+SUPABASE_URL=your_supabase_project_url
+SUPABASE_KEY=your_supabase_anon_key
+```
 
----
+### 4. Install Frontend Dependencies
 
-**Implementation Complete!** 🎉
+If using `date-fns` for date formatting:
 
-The admin page is fully functional and ready to use. The system now provides a user-friendly way to manage API keys, models, and system prompts without touching code or environment variables.
+```bash
+cd frontend
+npm install date-fns
+# or
+pnpm add date-fns
+```
+
+## Usage
+
+### For Users
+
+1. Navigate to the create page
+2. Fill in disease, symptom, and additional instructions
+3. Generate meditation
+4. Meditation is automatically saved to the database
+
+### For Admins
+
+1. Navigate to `/admin`
+2. Click "View Meditations" button
+3. See all created meditations
+4. Use actions to:
+   - View meditation details
+   - Download audio files
+   - Delete meditations
+
+## Features by Side
+
+### User Side
+
+- Create meditation
+- Listen to generated meditation
+- Download their own meditation
+
+### Admin Side
+
+- View all meditations created by all users
+- Download any meditation
+- Delete any meditation
+- View meditation text and metadata
+- Listen to audio in browser
+
+## Security Considerations
+
+- Admin endpoints should be protected with authentication
+- Consider adding role-based access control
+- Implement rate limiting on download endpoints
+- Consider adding file size limits on uploads
+
+## Future Enhancements
+
+- Add search and filtering
+- Add pagination on frontend
+- Add user authentication and user-specific meditation storage
+- Add export functionality (CSV, JSON)
+- Add analytics dashboard
+- Add email notifications for new meditations

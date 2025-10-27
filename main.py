@@ -25,12 +25,20 @@ from services.session_store import (
     get_session,
     SessionStatus,
 )
-from services.supabase_service import get_settings, update_settings
+from services.supabase_service import (
+    get_settings,
+    update_settings,
+    save_meditation,
+    get_all_meditations,
+    get_meditation_by_id,
+    delete_meditation,
+)
 from utils.helpers import get_temp_dir, ensure_dir_exists
 import uuid
 import asyncio
 from pathlib import Path
 import shutil
+from services.audio_processor import get_audio_duration
 
 app = FastAPI(title="Meditation API", version="1.0.0")
 
@@ -51,6 +59,7 @@ app.add_middleware(
 # Pydantic models
 class AuthRequest(BaseModel):
     password: str
+    role: str  # 'user' or 'admin'
 
 
 class GenerateRequest(BaseModel):
@@ -61,6 +70,7 @@ class GenerateRequest(BaseModel):
 
 class AuthResponse(BaseModel):
     success: bool
+    role: Optional[str] = None
     message: Optional[str] = None
 
 
@@ -89,6 +99,7 @@ class AdminSettingsRequest(BaseModel):
     elevenlabs_api_key: Optional[str] = None
     openai_model: Optional[str] = None
     elevenlabs_model: Optional[str] = None
+    elevenlabs_voice_id: Optional[str] = None
     system_prompt: Optional[str] = None
 
 
@@ -97,6 +108,7 @@ class AdminSettingsResponse(BaseModel):
     elevenlabs_api_key: str
     openai_model: str
     elevenlabs_model: str
+    elevenlabs_voice_id: str
     system_prompt: str
 
 
@@ -140,6 +152,7 @@ async def process_meditation_background(
                 chapter_path,
                 api_key=settings.get("elevenlabs_api_key"),
                 model_id=settings.get("elevenlabs_model"),
+                voice_id=settings.get("elevenlabs_voice_id"),
             )
             chapter_paths.append(chapter_path)
 
@@ -162,6 +175,35 @@ async def process_meditation_background(
         
         final_path = str(session_dir / "final.mp3")
         await overlay_audio(combined_path, static_music_path, final_path)
+
+        # Get audio duration
+        try:
+            duration_seconds = int(await get_audio_duration(final_path))
+        except:
+            duration_seconds = None
+
+        # Save meditation to database and upload audio to storage
+        try:
+            await save_meditation(
+                session_id=session_id,
+                disease=disease,
+                symptom=symptom,
+                additional_instructions=additional_instructions,
+                meditation_text=meditation_text,
+                audio_path=final_path,
+                duration_seconds=duration_seconds,
+            )
+            print(f"Meditation saved successfully: {session_id}")
+            
+            # Delete final file after successful upload to storage
+            try:
+                os.unlink(final_path)
+                print(f"Deleted local final file: {final_path}")
+            except Exception as delete_error:
+                print(f"Error deleting final file: {delete_error}")
+        except Exception as save_error:
+            print(f"Error saving meditation: {save_error}")
+            # Continue even if save fails
 
         # Mark as completed
         update_session(
@@ -203,13 +245,25 @@ async def root():
 
 @app.post("/api/auth", response_model=AuthResponse)
 async def auth(request: AuthRequest):
-    """Authenticate user with password"""
-    correct_password = os.getenv("APP_PASSWORD", "meditation")
-
-    if request.password == correct_password:
-        return AuthResponse(success=True)
-    else:
-        raise HTTPException(status_code=401, detail="Invalid password")
+    """Authenticate user or admin with password"""
+    user_password = os.getenv("USER_PASSWORD", "user")
+    admin_password = os.getenv("ADMIN_PASSWORD", "admin")
+    
+    # Validate role
+    if request.role not in ["user", "admin"]:
+        raise HTTPException(status_code=400, detail="Invalid role. Must be 'user' or 'admin'")
+    
+    # Check password based on role
+    if request.role == "user":
+        if request.password == user_password:
+            return AuthResponse(success=True, role="user")
+        else:
+            raise HTTPException(status_code=401, detail="Invalid user password")
+    elif request.role == "admin":
+        if request.password == admin_password:
+            return AuthResponse(success=True, role="admin")
+        else:
+            raise HTTPException(status_code=401, detail="Invalid admin password")
 
 
 @app.post("/api/generate", response_model=GenerateResponse)
@@ -296,8 +350,11 @@ async def ffmpeg_status():
 
 
 @app.get("/api/admin/settings", response_model=AdminSettingsResponse)
-async def get_admin_settings():
-    """Get admin settings"""
+async def get_admin_settings(password: str = ""):
+    """Get admin settings - requires admin password"""
+    admin_password = os.getenv("ADMIN_PASSWORD", "admin")
+    if password != admin_password:
+        raise HTTPException(status_code=401, detail="Admin access required")
     try:
         settings = await get_settings()
         return AdminSettingsResponse(
@@ -305,6 +362,7 @@ async def get_admin_settings():
             elevenlabs_api_key=settings.get("elevenlabs_api_key", ""),
             openai_model=settings.get("openai_model", "gpt-4o-mini"),
             elevenlabs_model=settings.get("elevenlabs_model", "eleven_turbo_v2_5"),
+            elevenlabs_voice_id=settings.get("elevenlabs_voice_id", "BpjGufoPiobT79j2vtj4"),
             system_prompt=settings.get("system_prompt", ""),
         )
     except Exception as e:
@@ -313,8 +371,11 @@ async def get_admin_settings():
 
 
 @app.put("/api/admin/settings", response_model=AdminSettingsResponse)
-async def update_admin_settings(request: AdminSettingsRequest):
-    """Update admin settings"""
+async def update_admin_settings(request: AdminSettingsRequest, password: str = ""):
+    """Update admin settings - requires admin password"""
+    admin_password = os.getenv("ADMIN_PASSWORD", "admin")
+    if password != admin_password:
+        raise HTTPException(status_code=401, detail="Admin access required")
     try:
         # Only update fields that are provided
         settings_to_update = {}
@@ -326,6 +387,8 @@ async def update_admin_settings(request: AdminSettingsRequest):
             settings_to_update["openai_model"] = request.openai_model
         if request.elevenlabs_model is not None:
             settings_to_update["elevenlabs_model"] = request.elevenlabs_model
+        if request.elevenlabs_voice_id is not None:
+            settings_to_update["elevenlabs_voice_id"] = request.elevenlabs_voice_id
         if request.system_prompt is not None:
             settings_to_update["system_prompt"] = request.system_prompt
         
@@ -335,10 +398,61 @@ async def update_admin_settings(request: AdminSettingsRequest):
             elevenlabs_api_key=updated_settings.get("elevenlabs_api_key", ""),
             openai_model=updated_settings.get("openai_model", "gpt-4o-mini"),
             elevenlabs_model=updated_settings.get("elevenlabs_model", "eleven_turbo_v2_5"),
+            elevenlabs_voice_id=updated_settings.get("elevenlabs_voice_id", "BpjGufoPiobT79j2vtj4"),
             system_prompt=updated_settings.get("system_prompt", ""),
         )
     except Exception as e:
         print(f"Error updating admin settings: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/admin/meditations")
+async def list_meditations(limit: Optional[int] = 100, offset: int = 0, password: str = ""):
+    """Get all meditations (admin endpoint)"""
+    admin_password = os.getenv("ADMIN_PASSWORD", "admin")
+    if password != admin_password:
+        raise HTTPException(status_code=401, detail="Admin access required")
+    try:
+        meditations = await get_all_meditations(limit=limit, offset=offset)
+        return {"meditations": meditations}
+    except Exception as e:
+        print(f"Error fetching meditations: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/admin/meditations/{meditation_id}")
+async def get_meditation_details(meditation_id: str, password: str = ""):
+    """Get meditation details by ID (admin endpoint)"""
+    admin_password = os.getenv("ADMIN_PASSWORD", "admin")
+    if password != admin_password:
+        raise HTTPException(status_code=401, detail="Admin access required")
+    try:
+        meditation = await get_meditation_by_id(meditation_id)
+        if not meditation:
+            raise HTTPException(status_code=404, detail="Meditation not found")
+        return meditation
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error fetching meditation: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/admin/meditations/{meditation_id}")
+async def delete_meditation_endpoint(meditation_id: str, password: str = ""):
+    """Delete meditation (admin endpoint)"""
+    admin_password = os.getenv("ADMIN_PASSWORD", "admin")
+    if password != admin_password:
+        raise HTTPException(status_code=401, detail="Admin access required")
+    try:
+        success = await delete_meditation(meditation_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Meditation not found")
+        return {"success": True, "message": "Meditation deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error deleting meditation: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

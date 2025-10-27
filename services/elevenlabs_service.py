@@ -7,15 +7,17 @@ from typing import Optional
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "BpjGufoPiobT79j2vtj4")
 
 
-async def text_to_speech(text: str, output_path: str, api_key: Optional[str] = None, model_id: Optional[str] = None) -> None:
+async def text_to_speech(text: str, output_path: str, api_key: Optional[str] = None, model_id: Optional[str] = None, voice_id: Optional[str] = None) -> None:
     """Convert text to speech using ElevenLabs API"""
     # Use provided API key or fall back to environment variable
     elevenlabs_api_key = api_key or os.getenv("ELEVENLABS_API_KEY")
     # Use provided model ID or fall back to environment variable
     elevenlabs_model_id = model_id or os.getenv("ELEVENLABS_MODEL_ID", "eleven_turbo_v2_5")
+    # Use provided voice ID or fall back to environment variable or default
+    elevenlabs_voice_id = voice_id or os.getenv("ELEVENLABS_VOICE_ID", ELEVENLABS_VOICE_ID)
     
     try:
-        url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}?output_format=mp3_44100_128"
+        url = f"https://api.elevenlabs.io/v1/text-to-speech/{elevenlabs_voice_id}?output_format=mp3_44100_128"
         headers = {
             "xi-api-key": elevenlabs_api_key,
             "Content-Type": "application/json",
