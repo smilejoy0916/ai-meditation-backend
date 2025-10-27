@@ -49,6 +49,7 @@ app.add_middleware(
         "http://localhost:3000",
         "http://localhost:3001",
         os.getenv("FRONTEND_URL", "http://localhost:3000"),
+        "https://healign.com"
     ],
     allow_credentials=True,
     allow_methods=["*"],
