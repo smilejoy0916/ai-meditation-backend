@@ -42,6 +42,10 @@ async def get_settings() -> Dict[str, Any]:
             "elevenlabs_model": os.getenv("ELEVENLABS_MODEL_ID", "eleven_turbo_v2_5"),
             "elevenlabs_voice_id": os.getenv("ELEVENLABS_VOICE_ID", "BpjGufoPiobT79j2vtj4"),
             "system_prompt": get_default_system_prompt(),
+            "chapter_count": 3,
+            "silence_duration_seconds": 45,
+            "user_password": os.getenv("USER_PASSWORD", "user"),
+            "admin_password": os.getenv("ADMIN_PASSWORD", "admin"),
         }
     except Exception as e:
         print(f"Error fetching settings from Supabase: {e}")
@@ -53,6 +57,10 @@ async def get_settings() -> Dict[str, Any]:
             "elevenlabs_model": os.getenv("ELEVENLABS_MODEL_ID", "eleven_turbo_v2_5"),
             "elevenlabs_voice_id": os.getenv("ELEVENLABS_VOICE_ID", "BpjGufoPiobT79j2vtj4"),
             "system_prompt": get_default_system_prompt(),
+            "chapter_count": 3,
+            "silence_duration_seconds": 45,
+            "user_password": os.getenv("USER_PASSWORD", "user"),
+            "admin_password": os.getenv("ADMIN_PASSWORD", "admin"),
         }
 
 
@@ -96,11 +104,11 @@ def get_default_system_prompt() -> str:
 
 ##Section 2: start of the meditation, settle the user. Choose any of common techniques to do so (e.g. focus on breath, senses, body, etc.). Leave some extra time/silence at the end of this section to allow the user to relax further in silence. End this section with the following tag: <break>
 
-##Section 3: further relaxation. Choose any of common techniques to do so. Leave some extra time/silence at the end of this section to allow the user to relax further in silence. End this section with the following tag: <break>
+##Section 3+: Progressive relaxation sections. Create additional relaxation sections as needed. Each section should use different relaxation techniques (e.g., body scan, breath work, progressive muscle relaxation, sensory awareness, etc.). Each of these sections should end with the <break> tag. The number of these sections can vary based on the chapter count.
 
-##Section 4: visualisation. Introduce the visualisation technique, tie it to the disease, symptom and additional instruction of the user and to section 1 of the meditation and then start. Choose any of common visualisation techniques to do so.
+##Final Section: visualisation and closing. Introduce the visualisation technique, tie it to the disease, symptom and additional instruction of the user and to section 1 of the meditation and then start. Choose any of common visualisation techniques to do so. Complete with a gentle closing to end the meditation.
 
-##Section 5: end of meditation."""
+Note: Use the <break> tag to separate chapters. The meditation will be split at these break points to insert periods of silence for deeper relaxation."""
 
 
 async def save_meditation(

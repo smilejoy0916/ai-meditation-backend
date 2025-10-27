@@ -29,6 +29,8 @@ async def generate_meditation(
     api_key: Optional[str] = None,
     model: Optional[str] = None,
     system_prompt_template: Optional[str] = None,
+    chapter_count: Optional[int] = 3,
+    break_count: Optional[int] = 3 - 1,
 ) -> str:
     """Generate meditation text using OpenAI GPT-4"""
     # Use default prompt template if not provided
@@ -51,17 +53,24 @@ async def generate_meditation(
 
 ##Section 4: visualisation. Introduce the visualisation technique, tie it to the disease, symptom and additional instruction of the user and to section 1 of the meditation and then start. Choose any of common visualisation techniques to do so.
 
-##Section 5: end of meditation."""
+##Section 5: end of meditation.
+## IMPORTANT: Create exactly {chapter_count} chapters separated by {break_count} <break> tags. Include exactly {break_count} <break> tags to create {chapter_count} chapters. """
     
     # Format the prompt with user inputs
     if not system_prompt_template:
         prompt = system_prompt_template.format(
             disease=disease,
             symptom=symptom,
-            additional_instructions=additional_instructions or "None"
+            additional_instructions=additional_instructions or "None",
+            chapter_count=chapter_count,
+            break_count=break_count,
         )
     else:
         prompt = system_prompt_template.replace("{disease}", disease).replace("{symptom}", symptom).replace("{additional_instructions}", additional_instructions or "None")
+        prompt = prompt + f""" ##IMPORTANT Requirements:
+        - Construct precisely {chapter_count} chapters.\n
+        - Carefully arrange exactly {chapter_count} chapters, with each one being distinctly separated by {break_count} <break> tags located at mid-points.\n
+        - Incorporate an exact count of {break_count} <break> tags, strategically positioned at mid-points, to establish {chapter_count} chapters.\n"""
 
     try:
         client = get_openai_client(api_key)
@@ -77,8 +86,8 @@ async def generate_meditation(
                     "content": prompt,
                 },
             ],
-            temperature=0.8,
-            max_tokens=2500,
+            temperature=1,
+            # max_tokens=2500,
         )
 
         meditation_text = response.choices[0].message.content or ""
@@ -88,24 +97,32 @@ async def generate_meditation(
         raise Exception("Failed to generate meditation text")
 
 
-def split_meditation_into_chapters(meditation_text: str) -> List[str]:
-    """Split meditation text into chapters by <break> tag"""
+def split_meditation_into_chapters(meditation_text: str, chapter_count: int = 3) -> List[str]:
+    """Split meditation text into chapters by <break> tag
+    
+    Args:
+        meditation_text: The meditation text with <break> tags
+        chapter_count: Desired number of chapters (default: 3)
+        
+    Returns:
+        List of chapter strings
+    """
     # Split by <break> tag
     chapters = [chapter.strip() for chapter in meditation_text.split("<break>")]
 
     # Filter out empty chapters
     filtered_chapters = [chapter for chapter in chapters if chapter]
 
-    # Ensure we have exactly 3 chapters
-    if len(filtered_chapters) < 3:
+    # Adjust chapters to match desired count
+    if len(filtered_chapters) < chapter_count:
         # If we have fewer chapters, pad with empty ones
-        while len(filtered_chapters) < 3:
+        while len(filtered_chapters) < chapter_count:
             filtered_chapters.append("")
-    elif len(filtered_chapters) > 3:
-        # If we have more than 3, combine the extras into the last chapter
-        first_two = filtered_chapters[:2]
-        rest = " ".join(filtered_chapters[2:])
-        return [*first_two, rest]
+    elif len(filtered_chapters) > chapter_count:
+        # If we have more chapters than desired, combine the extras into the last chapter
+        kept_chapters = filtered_chapters[:chapter_count - 1]
+        rest = " ".join(filtered_chapters[chapter_count - 1:])
+        return [*kept_chapters, rest]
 
     return filtered_chapters
 

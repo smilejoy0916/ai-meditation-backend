@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException, BackgroundTasks
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
@@ -26,6 +26,7 @@ from services.session_store import (
     SessionStatus,
 )
 from services.supabase_service import (
+    get_meditation_by_session_id,
     get_settings,
     update_settings,
     save_meditation,
@@ -102,6 +103,10 @@ class AdminSettingsRequest(BaseModel):
     elevenlabs_model: Optional[str] = None
     elevenlabs_voice_id: Optional[str] = None
     system_prompt: Optional[str] = None
+    chapter_count: Optional[int] = None
+    silence_duration_seconds: Optional[int] = None
+    user_password: Optional[str] = None
+    admin_password: Optional[str] = None
 
 
 class AdminSettingsResponse(BaseModel):
@@ -111,6 +116,10 @@ class AdminSettingsResponse(BaseModel):
     elevenlabs_model: str
     elevenlabs_voice_id: str
     system_prompt: str
+    chapter_count: int
+    silence_duration_seconds: int
+    user_password: str
+    admin_password: str
 
 
 # Background processing function
@@ -130,6 +139,10 @@ async def process_meditation_background(
 
         # Step 1: Generate meditation text with AI
         update_session(session_id, current_step=0, status=SessionStatus.PROCESSING)
+        
+        # Get chapter count from settings (defaults to 3)
+        chapter_count = settings.get("chapter_count", 3)
+        
         meditation_text = await generate_meditation(
             disease=disease,
             symptom=symptom,
@@ -137,10 +150,12 @@ async def process_meditation_background(
             api_key=settings.get("openai_api_key"),
             model=settings.get("openai_model"),
             system_prompt_template=settings.get("system_prompt"),
+            chapter_count=chapter_count,
+            break_count=chapter_count - 1,
         )
 
-        # Split into chapters
-        chapters = split_meditation_into_chapters(meditation_text)
+        # Split into chapters using the configured chapter count
+        chapters = split_meditation_into_chapters(meditation_text, chapter_count=chapter_count)
 
         # Step 2: Convert chapters to speech
         update_session(session_id, current_step=1)
@@ -160,9 +175,13 @@ async def process_meditation_background(
         # Step 3: Combine chapters with silence
         update_session(session_id, current_step=2)
         combined_path = str(session_dir / "combined.mp3")
+        
+        # Get silence duration from settings (defaults to 45 seconds)
+        silence_duration = settings.get("silence_duration_seconds", 45)
+        
         await combine_chapters_with_silence(
-            chapter_paths, 60, combined_path
-        )  # 60 seconds of silence
+            chapter_paths, silence_duration, combined_path
+        )
 
         # Step 4: Overlay with static background music
         update_session(session_id, current_step=3)
@@ -185,7 +204,7 @@ async def process_meditation_background(
 
         # Save meditation to database and upload audio to storage
         try:
-            await save_meditation(
+            saved_meditation_response = await save_meditation(
                 session_id=session_id,
                 disease=disease,
                 symptom=symptom,
@@ -211,7 +230,7 @@ async def process_meditation_background(
             session_id,
             status=SessionStatus.COMPLETED,
             current_step=4,
-            audio_path=final_path,
+            audio_path=saved_meditation_response.get("audio_url"),
         )
 
         # Clean up intermediate files
@@ -247,8 +266,10 @@ async def root():
 @app.post("/api/auth", response_model=AuthResponse)
 async def auth(request: AuthRequest):
     """Authenticate user or admin with password"""
-    user_password = os.getenv("USER_PASSWORD", "user")
-    admin_password = os.getenv("ADMIN_PASSWORD", "admin")
+    # Get passwords from settings (with fallback to environment variables)
+    settings = await get_settings()
+    user_password = settings.get("user_password", os.getenv("USER_PASSWORD", "user"))
+    admin_password = settings.get("admin_password", os.getenv("ADMIN_PASSWORD", "admin"))
     
     # Validate role
     if request.role not in ["user", "admin"]:
@@ -316,25 +337,18 @@ async def audio(sessionId: str):
     if not sessionId:
         raise HTTPException(status_code=400, detail="Session ID is required")
 
-    session = get_session(sessionId)
+    meditation = await get_meditation_by_session_id(sessionId)  
 
-    if not session or session.status != SessionStatus.COMPLETED:
-        raise HTTPException(
-            status_code=404, detail="Audio not ready or session not found"
-        )
+    if not meditation:
+        raise HTTPException(status_code=404, detail="Audio not ready or session not found")
 
-    audio_path = session.audio_path
+    audio_url = meditation.get("audio_url")
 
-    if not audio_path or not os.path.exists(audio_path):
+    if not audio_url:
         raise HTTPException(status_code=404, detail="Audio file not found")
 
-    return FileResponse(
-        audio_path,
-        media_type="audio/mpeg",
-        headers={
-            "Cache-Control": "public, max-age=3600",
-        },
-    )
+    # Redirect to the Supabase URL instead of trying to serve it as a local file
+    return RedirectResponse(url=audio_url, status_code=302)
 
 
 @app.get("/health")
@@ -365,6 +379,10 @@ async def get_admin_settings(password: str = ""):
             elevenlabs_model=settings.get("elevenlabs_model", "eleven_turbo_v2_5"),
             elevenlabs_voice_id=settings.get("elevenlabs_voice_id", "BpjGufoPiobT79j2vtj4"),
             system_prompt=settings.get("system_prompt", ""),
+            chapter_count=settings.get("chapter_count", 3),
+            silence_duration_seconds=settings.get("silence_duration_seconds", 45),
+            user_password=settings.get("user_password", os.getenv("USER_PASSWORD", "user")),
+            admin_password=settings.get("admin_password", os.getenv("ADMIN_PASSWORD", "admin")),
         )
     except Exception as e:
         print(f"Error fetching admin settings: {e}")
@@ -392,6 +410,14 @@ async def update_admin_settings(request: AdminSettingsRequest, password: str = "
             settings_to_update["elevenlabs_voice_id"] = request.elevenlabs_voice_id
         if request.system_prompt is not None:
             settings_to_update["system_prompt"] = request.system_prompt
+        if request.chapter_count is not None:
+            settings_to_update["chapter_count"] = request.chapter_count
+        if request.silence_duration_seconds is not None:
+            settings_to_update["silence_duration_seconds"] = request.silence_duration_seconds
+        if request.user_password is not None:
+            settings_to_update["user_password"] = request.user_password
+        if request.admin_password is not None:
+            settings_to_update["admin_password"] = request.admin_password
         
         updated_settings = await update_settings(settings_to_update)
         return AdminSettingsResponse(
@@ -401,6 +427,10 @@ async def update_admin_settings(request: AdminSettingsRequest, password: str = "
             elevenlabs_model=updated_settings.get("elevenlabs_model", "eleven_turbo_v2_5"),
             elevenlabs_voice_id=updated_settings.get("elevenlabs_voice_id", "BpjGufoPiobT79j2vtj4"),
             system_prompt=updated_settings.get("system_prompt", ""),
+            chapter_count=updated_settings.get("chapter_count", 3),
+            silence_duration_seconds=updated_settings.get("silence_duration_seconds", 45),
+            user_password=updated_settings.get("user_password", os.getenv("USER_PASSWORD", "user")),
+            admin_password=updated_settings.get("admin_password", os.getenv("ADMIN_PASSWORD", "admin")),
         )
     except Exception as e:
         print(f"Error updating admin settings: {e}")
