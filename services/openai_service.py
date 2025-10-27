@@ -1,29 +1,44 @@
 from openai import AsyncOpenAI
 import os
-from typing import List
+from typing import List, Optional
 
 # Lazy initialization
 openai_client = None
+cached_api_key: Optional[str] = None
 
 
-def get_openai_client() -> AsyncOpenAI:
+def get_openai_client(api_key: Optional[str] = None) -> AsyncOpenAI:
     """Get or create OpenAI client"""
-    global openai_client
-    if openai_client is None:
-        openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    global openai_client, cached_api_key
+    
+    # Use provided API key or fall back to environment variable
+    current_key = api_key or os.getenv("OPENAI_API_KEY")
+    
+    # Recreate client if API key has changed
+    if openai_client is None or cached_api_key != current_key:
+        openai_client = AsyncOpenAI(api_key=current_key)
+        cached_api_key = current_key
+    
     return openai_client
 
 
 async def generate_meditation(
-    disease: str, symptom: str, additional_instructions: str
+    disease: str,
+    symptom: str,
+    additional_instructions: str,
+    api_key: Optional[str] = None,
+    model: Optional[str] = None,
+    system_prompt_template: Optional[str] = None,
 ) -> str:
     """Generate meditation text using OpenAI GPT-4"""
-    prompt = f"""#Instruction: write a 10-minute meditation following the below structure. In that meditation, include elevenlabs tags such as [inhale], [exhale], [pause] or [whisper]. To not make it too fast paced, make sure to include a [pause 2 seconds] tag after each sentence. Using "..." also slows the pace down. Take the user inputs into account in the relevant parts of the meditation, as described. Avoid using "now" too much to progress the meditation forward.
+    # Use default prompt template if not provided
+    if not system_prompt_template:
+        system_prompt_template = """#Instruction: write a 10-minute meditation following the below structure. In that meditation, include elevenlabs tags such as [inhale], [exhale], [pause] or [whisper]. To not make it too fast paced, make sure to include a [pause 2 seconds] tag after each sentence. Using "..." also slows the pace down. Take the user inputs into account in the relevant parts of the meditation, as described. Avoid using "now" too much to progress the meditation forward.
 
 #User input:
 ##Disease: {disease}
 ##Symptom: {symptom}
-##Additional instruction: {additional_instructions or "None"}
+##Additional instruction: {additional_instructions}
 
 #Output: output only the meditation itself with the relevant tags, without saying anything else or without including section titles
 
@@ -37,11 +52,18 @@ async def generate_meditation(
 ##Section 4: visualisation. Introduce the visualisation technique, tie it to the disease, symptom and additional instruction of the user and to section 1 of the meditation and then start. Choose any of common visualisation techniques to do so.
 
 ##Section 5: end of meditation."""
+    
+    # Format the prompt with user inputs
+    prompt = system_prompt_template.format(
+        disease=disease,
+        symptom=symptom,
+        additional_instructions=additional_instructions or "None"
+    )
 
     try:
-        client = get_openai_client()
+        client = get_openai_client(api_key)
         response = await client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=model or "gpt-4o-mini",
             messages=[
                 {
                     "role": "system",

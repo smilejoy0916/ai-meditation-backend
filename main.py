@@ -25,6 +25,7 @@ from services.session_store import (
     get_session,
     SessionStatus,
 )
+from services.supabase_service import get_settings, update_settings
 from utils.helpers import get_temp_dir, ensure_dir_exists
 import uuid
 import asyncio
@@ -83,6 +84,22 @@ class FFmpegStatusResponse(BaseModel):
     message: Optional[str] = None
 
 
+class AdminSettingsRequest(BaseModel):
+    openai_api_key: Optional[str] = None
+    elevenlabs_api_key: Optional[str] = None
+    openai_model: Optional[str] = None
+    elevenlabs_model: Optional[str] = None
+    system_prompt: Optional[str] = None
+
+
+class AdminSettingsResponse(BaseModel):
+    openai_api_key: str
+    elevenlabs_api_key: str
+    openai_model: str
+    elevenlabs_model: str
+    system_prompt: str
+
+
 # Background processing function
 async def process_meditation_background(
     session_id: str, disease: str, symptom: str, additional_instructions: str
@@ -92,13 +109,21 @@ async def process_meditation_background(
     session_dir = Path(temp_dir) / session_id
 
     try:
+        # Get settings from Supabase
+        settings = await get_settings()
+        
          # Create session directory
         ensure_dir_exists(str(session_dir))
 
         # Step 1: Generate meditation text with AI
         update_session(session_id, current_step=0, status=SessionStatus.PROCESSING)
         meditation_text = await generate_meditation(
-            disease=disease, symptom=symptom, additional_instructions=additional_instructions
+            disease=disease,
+            symptom=symptom,
+            additional_instructions=additional_instructions,
+            api_key=settings.get("openai_api_key"),
+            model=settings.get("openai_model"),
+            system_prompt_template=settings.get("system_prompt"),
         )
 
         # Split into chapters
@@ -110,7 +135,12 @@ async def process_meditation_background(
 
         for i, chapter in enumerate(chapters):
             chapter_path = str(session_dir / f"chapter{i + 1}.mp3")
-            await text_to_speech(chapter, chapter_path)
+            await text_to_speech(
+                chapter,
+                chapter_path,
+                api_key=settings.get("elevenlabs_api_key"),
+                model_id=settings.get("elevenlabs_model"),
+            )
             chapter_paths.append(chapter_path)
 
         # Step 3: Combine chapters with silence
@@ -263,6 +293,53 @@ async def ffmpeg_status():
     """Get FFmpeg and FFprobe installation status and version information"""
     status = await get_ffmpeg_status()
     return FFmpegStatusResponse(**status)
+
+
+@app.get("/api/admin/settings", response_model=AdminSettingsResponse)
+async def get_admin_settings():
+    """Get admin settings"""
+    try:
+        settings = await get_settings()
+        return AdminSettingsResponse(
+            openai_api_key=settings.get("openai_api_key", ""),
+            elevenlabs_api_key=settings.get("elevenlabs_api_key", ""),
+            openai_model=settings.get("openai_model", "gpt-4o-mini"),
+            elevenlabs_model=settings.get("elevenlabs_model", "eleven_turbo_v2_5"),
+            system_prompt=settings.get("system_prompt", ""),
+        )
+    except Exception as e:
+        print(f"Error fetching admin settings: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/admin/settings", response_model=AdminSettingsResponse)
+async def update_admin_settings(request: AdminSettingsRequest):
+    """Update admin settings"""
+    try:
+        # Only update fields that are provided
+        settings_to_update = {}
+        if request.openai_api_key is not None:
+            settings_to_update["openai_api_key"] = request.openai_api_key
+        if request.elevenlabs_api_key is not None:
+            settings_to_update["elevenlabs_api_key"] = request.elevenlabs_api_key
+        if request.openai_model is not None:
+            settings_to_update["openai_model"] = request.openai_model
+        if request.elevenlabs_model is not None:
+            settings_to_update["elevenlabs_model"] = request.elevenlabs_model
+        if request.system_prompt is not None:
+            settings_to_update["system_prompt"] = request.system_prompt
+        
+        updated_settings = await update_settings(settings_to_update)
+        return AdminSettingsResponse(
+            openai_api_key=updated_settings.get("openai_api_key", ""),
+            elevenlabs_api_key=updated_settings.get("elevenlabs_api_key", ""),
+            openai_model=updated_settings.get("openai_model", "gpt-4o-mini"),
+            elevenlabs_model=updated_settings.get("elevenlabs_model", "eleven_turbo_v2_5"),
+            system_prompt=updated_settings.get("system_prompt", ""),
+        )
+    except Exception as e:
+        print(f"Error updating admin settings: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":

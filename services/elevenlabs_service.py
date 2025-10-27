@@ -1,24 +1,28 @@
 import os
 import aiohttp
 from pathlib import Path
+from typing import Optional
 
 
-ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "BpjGufoPiobT79j2vtj4")
-ELEVENLABS_MODEL_ID = os.getenv("ELEVENLABS_MODEL_ID", "eleven_v3")
 
 
-async def text_to_speech(text: str, output_path: str) -> None:
+async def text_to_speech(text: str, output_path: str, api_key: Optional[str] = None, model_id: Optional[str] = None) -> None:
     """Convert text to speech using ElevenLabs API"""
+    # Use provided API key or fall back to environment variable
+    elevenlabs_api_key = api_key or os.getenv("ELEVENLABS_API_KEY")
+    # Use provided model ID or fall back to environment variable
+    elevenlabs_model_id = model_id or os.getenv("ELEVENLABS_MODEL_ID", "eleven_turbo_v2_5")
+    
     try:
         url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}?output_format=mp3_44100_128"
         headers = {
-            "xi-api-key": ELEVENLABS_API_KEY,
+            "xi-api-key": elevenlabs_api_key,
             "Content-Type": "application/json",
         }
         data = {
             "text": text,
-            "model_id": ELEVENLABS_MODEL_ID,
+            "model_id": elevenlabs_model_id,
             "voice_settings": {
                 "stability": 0.5,
                 "similarity_boost": 0.6,
@@ -44,12 +48,15 @@ async def text_to_speech(text: str, output_path: str) -> None:
         raise Exception("Failed to convert text to speech")
 
 
-async def generate_music(music_length_ms: int, output_path: str) -> None:
+async def generate_music(music_length_ms: int, output_path: str, api_key: Optional[str] = None) -> None:
     """Generate meditation music using ElevenLabs API"""
+    # Use provided API key or fall back to environment variable
+    elevenlabs_api_key = api_key or os.getenv("ELEVENLABS_API_KEY")
+    
     try:
         url = "https://api.elevenlabs.io/v1/music?output_format=mp3_44100_128"
         headers = {
-            "xi-api-key": ELEVENLABS_API_KEY,
+            "xi-api-key": elevenlabs_api_key,
             "Content-Type": "application/json",
         }
         data = {
@@ -57,8 +64,6 @@ async def generate_music(music_length_ms: int, output_path: str) -> None:
             "music_length_ms": 60000,
             "model_id": "music_v1",
         }
-
-        print(ELEVENLABS_API_KEY)
 
         async with aiohttp.ClientSession() as session:
             async with session.post(url, json=data, headers=headers) as response:
