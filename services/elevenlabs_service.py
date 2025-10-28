@@ -73,8 +73,10 @@ async def text_to_speech_bytes(text: str, api_key: Optional[str] = None, model_i
             "text": f"`{text}`",
             "model_id": elevenlabs_model_id,
             "voice_settings": {
-                "stability": 0.5,
-                "similarity_boost": 0.6,
+                "stability": 0.50,
+                "similarity_boost": 0.75,
+                "style": 0.0,
+                "use_speaker_boost": False,
                 "speed": elevenlabs_speed,
             },
         }
