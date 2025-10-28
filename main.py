@@ -102,6 +102,7 @@ class AdminSettingsRequest(BaseModel):
     openai_model: Optional[str] = None
     elevenlabs_model: Optional[str] = None
     elevenlabs_voice_id: Optional[str] = None
+    elevenlabs_speed: Optional[float] = None
     system_prompt: Optional[str] = None
     chapter_count: Optional[int] = None
     silence_duration_seconds: Optional[int] = None
@@ -115,11 +116,19 @@ class AdminSettingsResponse(BaseModel):
     openai_model: str
     elevenlabs_model: str
     elevenlabs_voice_id: str
+    elevenlabs_speed: float
     system_prompt: str
     chapter_count: int
     silence_duration_seconds: int
     user_password: str
     admin_password: str
+
+
+class VoiceTestRequest(BaseModel):
+    text: str
+    model_id: Optional[str] = None
+    voice_id: Optional[str] = None
+    speed: Optional[float] = None
 
 
 # Background processing function
@@ -169,6 +178,7 @@ async def process_meditation_background(
                 api_key=settings.get("elevenlabs_api_key"),
                 model_id=settings.get("elevenlabs_model"),
                 voice_id=settings.get("elevenlabs_voice_id"),
+                speed=settings.get("elevenlabs_speed", 0.7),
             )
             chapter_paths.append(chapter_path)
 
@@ -378,6 +388,7 @@ async def get_admin_settings(password: str = ""):
             openai_model=settings.get("openai_model", "gpt-4o-mini"),
             elevenlabs_model=settings.get("elevenlabs_model", "eleven_turbo_v2_5"),
             elevenlabs_voice_id=settings.get("elevenlabs_voice_id", "BpjGufoPiobT79j2vtj4"),
+            elevenlabs_speed=settings.get("elevenlabs_speed", 0.7),
             system_prompt=settings.get("system_prompt", ""),
             chapter_count=settings.get("chapter_count", 3),
             silence_duration_seconds=settings.get("silence_duration_seconds", 45),
@@ -408,6 +419,11 @@ async def update_admin_settings(request: AdminSettingsRequest, password: str = "
             settings_to_update["elevenlabs_model"] = request.elevenlabs_model
         if request.elevenlabs_voice_id is not None:
             settings_to_update["elevenlabs_voice_id"] = request.elevenlabs_voice_id
+        if request.elevenlabs_speed is not None:
+            # Validate speed range
+            if request.elevenlabs_speed < 0.7 or request.elevenlabs_speed > 1.2:
+                raise HTTPException(status_code=400, detail="Speed must be between 0.7 and 1.2")
+            settings_to_update["elevenlabs_speed"] = request.elevenlabs_speed
         if request.system_prompt is not None:
             settings_to_update["system_prompt"] = request.system_prompt
         if request.chapter_count is not None:
@@ -426,6 +442,7 @@ async def update_admin_settings(request: AdminSettingsRequest, password: str = "
             openai_model=updated_settings.get("openai_model", "gpt-4o-mini"),
             elevenlabs_model=updated_settings.get("elevenlabs_model", "eleven_turbo_v2_5"),
             elevenlabs_voice_id=updated_settings.get("elevenlabs_voice_id", "BpjGufoPiobT79j2vtj4"),
+            elevenlabs_speed=updated_settings.get("elevenlabs_speed", 0.7),
             system_prompt=updated_settings.get("system_prompt", ""),
             chapter_count=updated_settings.get("chapter_count", 3),
             silence_duration_seconds=updated_settings.get("silence_duration_seconds", 45),
@@ -484,6 +501,53 @@ async def delete_meditation_endpoint(meditation_id: str, password: str = ""):
         raise
     except Exception as e:
         print(f"Error deleting meditation: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/admin/settings/test-voice")
+async def test_voice(request: VoiceTestRequest, password: str = ""):
+    """Test ElevenLabs voice with current settings (admin endpoint)"""
+    admin_password = os.getenv("ADMIN_PASSWORD", "admin")
+    if password != admin_password:
+        raise HTTPException(status_code=401, detail="Admin access required")
+    
+    try:
+        # Get settings from database
+        settings = await get_settings()
+        
+        # Use provided values or fall back to settings
+        model_id = request.model_id or settings.get("elevenlabs_model", "eleven_turbo_v2_5")
+        voice_id = request.voice_id or settings.get("elevenlabs_voice_id", "BpjGufoPiobT79j2vtj4")
+        speed = request.speed if request.speed is not None else settings.get("elevenlabs_speed", 0.7)
+        api_key = settings.get("elevenlabs_api_key")
+        
+        if not api_key:
+            raise HTTPException(status_code=400, detail="ElevenLabs API key not configured")
+        
+        # Generate test audio directly in memory (no temp file)
+        from services.elevenlabs_service import text_to_speech_bytes
+        from fastapi.responses import Response
+        
+        audio_bytes = await text_to_speech_bytes(
+            text=request.text,
+            api_key=api_key,
+            model_id=model_id,
+            voice_id=voice_id,
+            speed=speed,
+        )
+        
+        # Return audio directly from memory
+        return Response(
+            content=audio_bytes,
+            media_type="audio/mpeg",
+            headers={
+                "Content-Disposition": "inline; filename=voice_test.mp3"
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error testing voice: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
